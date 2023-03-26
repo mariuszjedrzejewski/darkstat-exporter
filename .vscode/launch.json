@@ -13,7 +13,8 @@
             "env": {
                 "IP_LIST": "192.168.1.1 192.168.1.4 192.168.1.6",
                 "LISTEN_PORT": ":9090",
-                "METRICS_RECORD_INTERVAL": "20"
+                "METRICS_RECORD_INTERVAL": "20",
+                "DARKSTAT_URL_PREFIX": "http://openwrt.lan:667/hosts/%s"
             },
         }
     ]

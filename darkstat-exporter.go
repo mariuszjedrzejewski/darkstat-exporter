@@ -16,10 +16,6 @@ import (
 	"github.com/go-co-op/gocron"
 )
 
-const (
-	URL_PREFIX = "http://openwrt.lan:667/hosts/%s"
-)
-
 type HostData struct {
 	Hostname   string
 	MacAddress string
@@ -77,7 +73,7 @@ var recordMetrics = func() {
 	ipList := strings.Fields(os.Getenv("IP_LIST"))
 
 	for _, ip := range ipList {
-		url := fmt.Sprintf(URL_PREFIX, ip)
+		url := fmt.Sprintf(os.Getenv("DARKSTAT_URL_PREFIX"), ip)
 
 		doc, err := goquery.NewDocument(url)
 		if err != nil {
