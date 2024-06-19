@@ -39,21 +39,21 @@ var config Config
 var (
 	inBytesCounter = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "darkstat_in_bytes",
+			Name: "darkstat_bytes_in_total",
 			Help: "Incoming bytes",
 		},
 		[]string{"group", "ip", "hostname", "mac_address"})
 
 	outBytesCounter = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "darkstat_out_bytes",
+			Name: "darkstat_bytes_out_total",
 			Help: "Outgoing bytes",
 		},
 		[]string{"group", "ip", "hostname", "mac_address"})
 
 	totalBytesCounter = prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
-			Name: "darkstat_total_bytes",
+			Name: "darkstat_bytes_total",
 			Help: "Total bytes",
 		},
 		[]string{"group", "ip", "hostname", "mac_address"})
@@ -86,22 +86,24 @@ func init() {
 	s.StartAsync()
 }
 
-func parseConfig() {
-
-}
-
 var recordMetrics = func() {
 	for _, cfg := range config.Cfg {
 		for _, ip := range cfg.Ip {
 			url := fmt.Sprintf(os.Getenv("DARKSTAT_URL_PREFIX"), ip)
 
-			doc, err := goquery.NewDocument(url)
+			log.Printf("Getting data for url: %s", url)
+			response, err := http.Get(url)
 			if err != nil {
 				log.Println(err)
-				return
+				continue
 			}
 
 			dataToParse := make([]string, 0)
+			doc, err := goquery.NewDocumentFromReader(response.Body)
+			if err != nil {
+				log.Println(err)
+				continue
+			}
 
 			doc.Find("p").Each(func(x int, p *goquery.Selection) {
 				if x == 0 || x == 2 {
@@ -133,19 +135,14 @@ func getValues(data []string) HostData {
 		switch lineData[0] {
 		case "Hostname":
 			hd.Hostname = rawValueStr
-			break
 		case "MAC Address":
 			hd.MacAddress = rawValueStr
-			break
 		case "In":
 			hd.In = getRawValue(rawValueStr)
-			break
 		case "Out":
 			hd.Out = getRawValue(rawValueStr)
-			break
 		case "Total":
 			hd.Total = getRawValue(rawValueStr)
-			break
 		}
 	}
 
