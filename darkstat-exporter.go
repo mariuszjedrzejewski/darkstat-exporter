@@ -14,8 +14,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
-	"github.com/go-co-op/gocron"
+	"github.com/go-co-op/gocron/v2"
 )
+
+const DEFAULT_METRICS_INTERVAL = time.Duration(30 * time.Second)
 
 type HostData struct {
 	Hostname   string
@@ -73,20 +75,30 @@ func init() {
 	log.Println("Getting initial metrics values...")
 	recordMetrics()
 
-	metricsRecordInterval := 30
+	metricsRecordInterval := DEFAULT_METRICS_INTERVAL
 	if len(os.Getenv("METRICS_RECORD_INTERVAL")) != 0 {
-		interval, err := strconv.ParseInt(os.Getenv("METRICS_RECORD_INTERVAL"), 10, 64)
+		interval, err := time.ParseDuration(os.Getenv("METRICS_RECORD_INTERVAL"))
 		if err == nil {
-			metricsRecordInterval = int(interval)
+			metricsRecordInterval = interval
 		}
 	}
-	log.Printf("Starting scheduler for every %d sec...", metricsRecordInterval)
-	s := gocron.NewScheduler(time.UTC)
-	s.Every(metricsRecordInterval).Seconds().Do(recordMetrics)
-	s.StartAsync()
+
+	log.Printf("Starting scheduler for every %s", metricsRecordInterval)
+	s, err := gocron.NewScheduler(gocron.WithLocation(time.UTC))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	job, err := s.NewJob(gocron.DurationJob(metricsRecordInterval), gocron.NewTask(recordMetrics))
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("registered job: %s", job.Name())
+
+	s.Start()
 }
 
-var recordMetrics = func() {
+func recordMetrics() {
 	for _, cfg := range config.Cfg {
 		for _, ip := range cfg.Ip {
 			url := fmt.Sprintf(os.Getenv("DARKSTAT_URL_PREFIX"), ip)
@@ -165,6 +177,7 @@ func main() {
 	if len(os.Getenv("LISTEN_PORT")) != 0 {
 		port = os.Getenv("LISTEN_PORT")
 	}
+
 	log.Printf("Starting server at %s...", port)
-	http.ListenAndServe(port, nil)
+	log.Fatal(http.ListenAndServe(port, nil))
 }
