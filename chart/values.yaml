@@ -73,7 +73,8 @@ volumes:
 # Additional volumeMounts on the output Deployment definition.
 volumeMounts:
 - name: config-volume
-  mountPath: "/config.yaml"
+  mountPath: /config.yaml
+  subPath: config.yaml
 
 nodeSelector: {}
 
