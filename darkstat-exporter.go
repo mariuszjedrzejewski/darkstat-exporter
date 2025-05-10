@@ -1,23 +1,19 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/spf13/viper"
 
 	"github.com/go-co-op/gocron/v2"
 )
-
-const DEFAULT_METRICS_INTERVAL = time.Duration(30 * time.Second)
 
 type HostData struct {
 	Hostname   string
@@ -27,83 +23,47 @@ type HostData struct {
 	Total      float64
 }
 
-type ConfigEntry struct {
-	Group string   `json:"group"`
-	Ip    []string `json:"ip"`
-}
-
-type Config struct {
-	Cfg []ConfigEntry `json:"cfg"`
-}
-
-var config Config
-
 var (
-	inBytesCounter = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "darkstat_bytes_in_total",
-			Help: "Incoming bytes",
-		},
-		[]string{"group", "ip", "hostname", "mac_address"})
-
-	outBytesCounter = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "darkstat_bytes_out_total",
-			Help: "Outgoing bytes",
-		},
-		[]string{"group", "ip", "hostname", "mac_address"})
-
-	totalBytesCounter = prometheus.NewGaugeVec(
-		prometheus.GaugeOpts{
-			Name: "darkstat_bytes_total",
-			Help: "Total bytes",
-		},
-		[]string{"group", "ip", "hostname", "mac_address"})
+	v         *viper.Viper
+	scheduler gocron.Scheduler
+	updateJob gocron.Job
 )
 
 func init() {
-	err := json.Unmarshal([]byte(os.Getenv("CONFIG")), &config)
-	if err != nil {
-		log.Fatal(err)
-	}
+	initViperConfig()
 
-	log.Println("Registering prometheus metrics...")
-	prometheus.MustRegister(inBytesCounter)
-	prometheus.MustRegister(outBytesCounter)
-	prometheus.MustRegister(totalBytesCounter)
+	initPrometheusMetrics()
 
-	log.Println("Getting initial metrics values...")
+	log.Println("getting initial metrics values")
 	recordMetrics()
 
-	metricsRecordInterval := DEFAULT_METRICS_INTERVAL
-	if len(os.Getenv("METRICS_RECORD_INTERVAL")) != 0 {
-		interval, err := time.ParseDuration(os.Getenv("METRICS_RECORD_INTERVAL"))
-		if err == nil {
-			metricsRecordInterval = interval
-		}
-	}
-
-	log.Printf("Starting scheduler for every %s", metricsRecordInterval)
-	s, err := gocron.NewScheduler(gocron.WithLocation(time.UTC))
+	var err error
+	scheduler, err = gocron.NewScheduler(gocron.WithLocation(time.UTC))
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	job, err := s.NewJob(gocron.DurationJob(metricsRecordInterval), gocron.NewTask(recordMetrics))
+	metricsRecordInterval := v.GetDuration("metricsRecordInterval")
+	log.Printf("starting scheduler job for every %s", metricsRecordInterval)
+	updateJob, err = scheduler.NewJob(gocron.DurationJob(metricsRecordInterval), gocron.NewTask(recordMetrics))
 	if err != nil {
 		log.Fatal(err)
 	}
-	log.Printf("registered job: %s", job.Name())
+	log.Printf("registered job: %s, id: %s", updateJob.Name(), updateJob.ID())
 
-	s.Start()
+	scheduler.Start()
 }
 
 func recordMetrics() {
-	for _, cfg := range config.Cfg {
-		for _, ip := range cfg.Ip {
-			url := fmt.Sprintf(os.Getenv("DARKSTAT_URL_PREFIX"), ip)
+	log.Println("running recordMetrics()")
 
-			log.Printf("Getting data for url: %s", url)
+	groups := v.GetStringMapStringSlice("groups")
+	for group, ips := range groups {
+		log.Printf("group: %s", group)
+		for _, ip := range ips {
+			url := fmt.Sprintf(v.GetString("darkstatUrlPrefix"), ip)
+
+			log.Printf("getting data for url: %s", url)
 			response, err := http.Get(url)
 			if err != nil {
 				log.Println(err)
@@ -125,9 +85,9 @@ func recordMetrics() {
 
 			d := getValues(dataToParse)
 
-			inBytesCounter.WithLabelValues(cfg.Group, ip, d.Hostname, d.MacAddress).Set(float64(d.In))
-			outBytesCounter.WithLabelValues(cfg.Group, ip, d.Hostname, d.MacAddress).Set(float64(d.Out))
-			totalBytesCounter.WithLabelValues(cfg.Group, ip, d.Hostname, d.MacAddress).Set(float64(d.Total))
+			inBytesCounter.WithLabelValues(group, ip, d.Hostname, d.MacAddress).Set(float64(d.In))
+			outBytesCounter.WithLabelValues(group, ip, d.Hostname, d.MacAddress).Set(float64(d.Out))
+			totalBytesCounter.WithLabelValues(group, ip, d.Hostname, d.MacAddress).Set(float64(d.Total))
 		}
 	}
 }
@@ -164,7 +124,7 @@ func getValues(data []string) HostData {
 func getRawValue(s string) float64 {
 	rawValue, err := strconv.ParseFloat(s, 64)
 	if err != nil {
-		log.Printf("Error converting value")
+		log.Printf("error converting value")
 		return 0
 	}
 	return rawValue
@@ -173,11 +133,7 @@ func getRawValue(s string) float64 {
 func main() {
 	http.Handle("/metrics", promhttp.Handler())
 
-	port := ":9090"
-	if len(os.Getenv("LISTEN_PORT")) != 0 {
-		port = os.Getenv("LISTEN_PORT")
-	}
-
-	log.Printf("Starting server at %s...", port)
-	log.Fatal(http.ListenAndServe(port, nil))
+	listenPort := v.GetString("listenPort")
+	log.Printf("starting server at %s", listenPort)
+	log.Fatal(http.ListenAndServe(listenPort, nil))
 }

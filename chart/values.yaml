@@ -66,16 +66,14 @@ autoscaling:
 
 # Additional volumes on the output Deployment definition.
 volumes: []
-# - name: foo
-#   secret:
-#     secretName: mysecret
-#     optional: false
+- name: config-volume
+  configMap:
+    name: darkstat-exporter-config
 
 # Additional volumeMounts on the output Deployment definition.
 volumeMounts: []
-# - name: foo
-#   mountPath: "/etc/foo"
-#   readOnly: true
+- name: config-volume
+  mountPath: "/config.yaml"
 
 nodeSelector: {}
 
@@ -83,6 +81,4 @@ tolerations: []
 
 affinity: {}
 
-envFrom:
-  - configMapRef:
-      name: darkstat-exporter-config
+envFrom: {}
